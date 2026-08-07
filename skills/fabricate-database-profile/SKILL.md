@@ -1,0 +1,115 @@
+---
+name: fabricate-database-profile
+description: Profiles a production or staging database locally and produces a Fabricate profile export (.fabricate-profile.json) containing only schema and aggregate statistics, then optionally imports it into a Fabricate project over MCP. Use when the user asks to profile a database for Fabricate, build a statistical model of production data for synthetic data generation, or create/import a Fabricate profile without connecting Fabricate to production.
+---
+
+# Fabricate database profiling
+
+Build a statistical model of a database that Fabricate can use to generate realistic synthetic data in lower environments — **without connecting Fabricate to that database**. You connect to the database; Fabricate only ever receives aggregate statistics.
+
+## Trust boundary
+
+```
+production database  <->  you (this machine)  ->  .fabricate-profile.json  ->  Fabricate
+```
+
+- Credentials never leave this machine and are never written into the profile, generated source files, logs, or chat.
+- Raw rows never leave the database client process.
+- The profile contains **only** schema metadata and aggregate statistics.
+
+## Workflow
+
+```
+- [ ] Step 1: Establish read-only connectivity
+- [ ] Step 2: Inventory the schema
+- [ ] Step 3: Collect aggregate statistics
+- [ ] Step 4: Write findings
+- [ ] Step 5: Emit and validate the profile export
+- [ ] Step 6: Import into Fabricate (optional)
+```
+
+### Step 1: Establish read-only connectivity
+
+There is no bundled profiling tool. Use whatever already works on this machine, in this order:
+
+1. A database-native CLI (`psql`, `mysql`, `sqlcmd`, `sqlplus`, `snowsql`, `bq`, `sqlite3`, …).
+2. An existing project dependency, SDK, or configured connection in the repo.
+3. A database tool provided by this coding environment (for example an MCP server).
+4. A short throwaway program you write, using the database's maintained driver.
+
+Ask the user which database and connection to use if it is not obvious. Infer the platform from the connection string when you can.
+
+Then enforce these before running anything (see [reference.md](reference.md) for per-platform syntax):
+
+- Use a **read-only database role**. Ask the user to provide one if the available credentials are read-write, and warn them explicitly if they decline.
+- Set a read-only transaction/session and a **statement timeout** on every session.
+- Quote all identifiers you interpolate; never build SQL from unvalidated names.
+- Confirm connectivity with a trivial query before profiling.
+
+### Step 2: Inventory the schema
+
+Collect, per table: columns with **native** types, nullability, defaults, primary/foreign/unique constraints, indexes, and an approximate or exact row count. Ask which schemas/tables to include when the database is large, and record the filter you applied.
+
+Preserve platform-specific detail that changes how data must be generated — identity/sequence behavior, schemas and catalogs, partitioning and clustering, semi-structured column types, collation and case sensitivity, and engine-specific default expressions. Record it rather than normalizing it away.
+
+### Step 3: Collect aggregate statistics
+
+Compute these **in the database** with aggregate SQL wherever possible:
+
+| Statistic | Applies to |
+|---|---|
+| Null ratio, distinct ratio | every column |
+| Min, max, mean, standard deviation | numeric and temporal columns |
+| Min, max, mean length | text columns |
+| Value frequency distribution (top ~30 buckets) | low-cardinality and categorical columns |
+| Range histogram (~5–30 buckets) | high-cardinality numeric and temporal columns |
+| Pearson correlation (report when \|r\| >= 0.3) | numeric and temporal column pairs |
+| Child-per-parent min/max/average, and orphan share | every foreign key |
+
+Sample rather than scanning whole tables: draw a bounded random sample (Fabricate's own profiler defaults to 5,000 rows) per table and note the sample size in the findings. Prefer platform-native sampling (`TABLESAMPLE`, `SAMPLE`, `ORDER BY RANDOM()`) over full scans on large tables.
+
+If you must compute a statistic outside the database, keep raw rows inside your program, write only aggregates to a temporary file, never print raw rows to stdout or read them into context, and delete any temporary program and data file once the profile is written.
+
+### Step 4: Write findings
+
+A profile is a list of **findings**: self-contained, plain-English statements about the schema and data. See [reference.md](reference.md) for the finding types, tag rules, and worked examples.
+
+Every finding needs:
+
+- `content` — a complete sentence that makes sense on its own, including the concrete numbers.
+- `finding_type` — one of `ddl`, `description`, `distribution`, `correlation`, `constraints`, `cardinality`, `anomaly`.
+- `tags` — only `table:<table_name>` and `column:<table_name>.<column_name>`. Any other namespace is rejected on import.
+
+### Step 5: Emit and validate the profile export
+
+Write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and no real values from the source data appear anywhere.
+
+Then summarize for the user: tables profiled, finding count by type, and anything you deliberately skipped.
+
+### Step 6: Import into Fabricate (optional)
+
+If a Fabricate MCP server is connected, call `import_profile` with the target `project_id` and the parsed JSON object as `profile_export`. Use `list_workspaces` and `list_projects` to find the project.
+
+If it is not connected, do not stop at the file — offer to connect it, since installing this skill on its own does not add the MCP server. Add this to the user's MCP client config and let it run Fabricate's OAuth flow on first use:
+
+```json
+{
+  "mcpServers": {
+    "fabricate": { "url": "https://fabricate.tonic.ai/api/v1/mcp" }
+  }
+}
+```
+
+Self-hosted Fabricate uses `https://<their-fabricate-host>/api/v1/mcp`. If the user would rather not connect MCP at all, they can upload the `.fabricate-profile.json` file through the Profiles sidebar in their Fabricate project.
+
+## Hard stops
+
+Never do any of the following, even if asked:
+
+- Copy real values from the source data into findings — no names, emails, phone numbers, addresses, dates of birth, government identifiers, payment details, IP addresses, free-text notes, or verbatim sample values. Describe **format and statistics** instead: "emails follow `firstname.lastname@<domain>`, 100% unique, mean length 24".
+- Include high-cardinality identifying values as distribution buckets. Report a frequency shape ("top value covers 3% of rows") rather than the values themselves.
+- Put credentials, connection strings, or tokens in generated files, the profile, logs, or chat.
+- Write to the source database, or run DDL/DML of any kind.
+- Leave temporary programs, dumps, or extracts on disk after finishing.
+
+Values from small, non-sensitive, well-known reference tables (currencies, country codes, statuses) are the one exception, and only with explicit user approval — see the `reference_rows` section in [reference.md](reference.md).
