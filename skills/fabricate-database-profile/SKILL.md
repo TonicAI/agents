@@ -77,18 +77,24 @@ A profile is a list of **findings**: self-contained, plain-English statements ab
 Every finding needs:
 
 - `content` — a complete sentence that makes sense on its own, including the concrete numbers.
-- `finding_type` — one of `ddl`, `description`, `distribution`, `correlation`, `constraints`, `cardinality`, `anomaly`.
+- `finding_type` — one of `ddl`, `description`, `distribution`, `correlation`, `constraints`, `cardinality`, `anomaly`, or `reference_rows`.
 - `tags` — only `table:<table_name>` and `column:<table_name>.<column_name>`. Any other namespace is rejected on import.
+
+`reference_rows` is the only type that carries real values, and the only type that may carry a `data` payload. It requires explicit user approval and a small, non-sensitive lookup table — see the `reference_rows` section in [reference.md](reference.md). Every other type describes the data and must omit `data` entirely.
 
 ### Step 5: Emit and validate the profile export
 
-Write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and no real values from the source data appear anywhere.
+Write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and `data` appears only on `reference_rows` findings the user approved in Step 4.
+
+No real values from the source data may appear anywhere else. Do not silently drop a finding to satisfy this check — an approved `reference_rows` snapshot belongs in the export, and anything else that fails validation is a bug to fix and report, not to delete.
 
 Then summarize for the user: tables profiled, finding count by type, and anything you deliberately skipped.
 
 ### Step 6: Import into Fabricate (optional)
 
 If a Fabricate MCP server is connected, call `import_profile` with the target `project_id` and the parsed JSON object as `profile_export`. Use `list_workspaces` and `list_projects` to find the project.
+
+Importing appends by default, so a retry would leave two copies of every finding. Pass `replace: true` if you are retrying a call whose outcome you are unsure of, or re-profiling a database this profile name already covers.
 
 If it is not connected, do not stop at the file — offer to connect it, since installing this skill on its own does not add the MCP server. Add this to the user's MCP client config and let it run Fabricate's OAuth flow on first use:
 
