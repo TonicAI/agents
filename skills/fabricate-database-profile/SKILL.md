@@ -60,13 +60,27 @@ Compute these **in the database** with aggregate SQL wherever possible:
 
 | Statistic | Applies to |
 |---|---|
-| Null ratio, distinct ratio | every column |
+| Null ratio, distinct ratio, most common value and its share | every column |
 | Min, max, mean, standard deviation | numeric and temporal columns |
 | Min, max, mean length | text columns |
 | Value frequency distribution (top ~30 buckets) | low-cardinality and categorical columns |
 | Range histogram (~5–30 buckets) | high-cardinality numeric and temporal columns |
 | Pearson correlation (report when \|r\| >= 0.3) | numeric and temporal column pairs |
-| Child-per-parent min/max/average, and orphan share | every foreign key |
+
+Run that same set against **four different result sets, not just the table**. Statistics over one table at a time describe columns in isolation, and almost everything that makes generated data feel real lives between columns and between tables. See [reference.md](reference.md) for portable SQL for each shape.
+
+1. **The table** — every column, as above.
+2. **The child joined to its parent** — profile a foreign key alongside columns from the referenced row. This is how you find rules like "the card charged always belongs to the customer who placed the order".
+3. **One row per parent, carrying `COUNT(children)`** — then treat that count as a column and bin it. Report the whole fan-out **distribution** ("1 order 38.5%, 2 orders 33.8%, 3 orders 16.9%, 4 orders 10.8%"), not only the min, max and mean, along with the share of parents that have no children at all.
+4. **Derived expressions** — `quantity * unit_price`, `child.created_at - parent.created_at`, `now() - customer.created_at`. A derived value is a column like any other: profile it.
+
+Then look for the relationships a per-column pass cannot see:
+
+- **Conditional statistics.** Average a measure within each category (order value per country, per status, per age band), and cross-tabulate pairs of categorical columns. Report the flat results too — "the refund rate is ~2% within every order status" tells Fabricate to draw the two independently, which is as useful as finding a correlation.
+- **Cross-table temporal rules.** For every foreign key, compare the child's timestamps against the parent's and report how many rows violate the expected ordering. This is where both "every order falls after its customer signed up" and "128 payments predate the card they charge" come from.
+- **Format rules per group.** When a format depends on another column — card number length and leading digit per brand, identifier prefix per type — profile the pattern within each group rather than across the column as a whole.
+
+**Quantify every rule you assert.** Never write "every", "always" or "never" without the count behind it: say "N of M rows satisfy this" and give the number of exceptions. A rule holding for 995 of 1,000 rows is a different generation instruction from one holding for all 1,000, and asserting the absolute without counting it is how a profile ends up simply wrong.
 
 Sample rather than scanning whole tables: draw a bounded random sample (Fabricate's own profiler defaults to 5,000 rows) per table and note the sample size in the findings. Prefer platform-native sampling (`TABLESAMPLE`, `SAMPLE`, `ORDER BY RANDOM()`) over full scans on large tables.
 
@@ -84,9 +98,18 @@ Every finding needs:
 
 `reference_rows` is the only type that carries real values, and the only type that may carry a `data` payload. It requires explicit user approval and a small, non-sensitive lookup table — see the `reference_rows` section in [reference.md](reference.md). Every other type describes the data and must omit `data` entirely.
 
+**Separate what the data does from what it should do.** A source database — especially one already seeded or generated — carries artifacts nobody wants reproduced: every parent having at least one child, a column perfectly unique where real data would repeat heavily, a hard cap truncating a distribution, statuses drawn independently of the dates around them. Record these as `anomaly` findings that name the artifact and say what real data would look like instead. Writing one up as a `constraints` finding instead turns a flaw in the source into a requirement, and Fabricate will faithfully reproduce it.
+
 ### Step 5: Emit and validate the profile export
 
-Write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and `data` appears only on `reference_rows` findings the user approved in Step 4.
+First check coverage, while a thin profile is still cheap to fill in:
+
+- Every table has a `ddl` finding and a `description` finding carrying its row count.
+- Every foreign key has a `cardinality` finding carrying a fan-out distribution, not just a mean.
+- Every column appears in at least one finding beyond its table's `ddl`.
+- Every rule phrased as an absolute carries the row counts behind it.
+
+Then write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and `data` appears only on `reference_rows` findings the user approved in Step 4.
 
 No real values from the source data may appear anywhere else. Do not silently drop a finding to satisfy this check — an approved `reference_rows` snapshot belongs in the export, and anything else that fails validation is a bug to fix and report, not to delete.
 

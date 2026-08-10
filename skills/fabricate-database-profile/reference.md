@@ -1,6 +1,85 @@
 # Reference
 
-Companion to [SKILL.md](SKILL.md): finding vocabulary, the export contract, and per-platform notes.
+Companion to [SKILL.md](SKILL.md): query patterns for Step 3, finding vocabulary, the export contract, and per-platform notes.
+
+## Query patterns
+
+Portable starting points for the statistics Step 3 asks for beyond the per-column pass. All of them return aggregates only. Where a pattern derives something from a value — a length, a leading character, a bucket index — group by the derived shape and never select the value itself.
+
+**Fan-out distribution.** Aggregate twice: children per parent, then parents per child count. The inner `LEFT JOIN` is what makes childless parents count as zero rather than vanish.
+
+```sql
+SELECT child_count,
+       COUNT(*)                                AS parents,
+       COUNT(*) * 1.0 / SUM(COUNT(*)) OVER ()  AS share
+FROM (
+  SELECT p.id, COUNT(c.id) AS child_count
+  FROM parent p
+  LEFT JOIN child c ON c.parent_id = p.id
+  GROUP BY p.id
+) counts
+GROUP BY child_count
+ORDER BY child_count;
+```
+
+Report every row when the counts are few. Past ~30 distinct counts, keep the head exact and collapse the tail into ranges.
+
+**Most common value and its share**, for any column regardless of type. The window sums over all groups before the limit, so the share stays a share of non-null rows.
+
+```sql
+SELECT col,
+       COUNT(*)                                AS n,
+       COUNT(*) * 1.0 / SUM(COUNT(*)) OVER ()  AS share
+FROM t
+WHERE col IS NOT NULL
+GROUP BY col
+ORDER BY n DESC
+LIMIT 30;
+```
+
+**Conditional statistics** — a measure summarized within each category. Bucket the grouping column first (`FLOOR((x - min) / width)`) when it is numeric or temporal.
+
+```sql
+SELECT category, COUNT(*) AS n, AVG(measure) AS mean, MIN(measure) AS lo, MAX(measure) AS hi
+FROM t
+GROUP BY category
+ORDER BY n DESC;
+```
+
+**Crosstab** of two categorical columns. Compare each cell's share against the product of the two marginal shares: close means independent, and that is worth recording.
+
+```sql
+SELECT a, b, COUNT(*) AS n
+FROM t
+GROUP BY a, b
+ORDER BY n DESC;
+```
+
+**Rule check with counts.** The shape behind every quantified assertion — one row giving the population and how much of it satisfies the rule.
+
+```sql
+SELECT COUNT(*)                                        AS total,
+       SUM(CASE WHEN <rule> THEN 1 ELSE 0 END)         AS satisfying
+FROM t;
+```
+
+**Cross-table temporal ordering** is that same shape across a join. Interval arithmetic is dialect-specific, so summarize gaps separately with the platform's date-difference function.
+
+```sql
+SELECT COUNT(*)                                                   AS total,
+       SUM(CASE WHEN c.created_at < p.created_at THEN 1 ELSE 0 END) AS violations
+FROM child c
+JOIN parent p ON p.id = c.parent_id;
+```
+
+**Format rules per group.** Group by the derived shape alongside the column that governs it.
+
+```sql
+SELECT brand, LENGTH(number) AS len, SUBSTR(number, 1, 1) AS lead_digit, COUNT(*) AS n
+FROM cards
+GROUP BY brand, LENGTH(number), SUBSTR(number, 1, 1)
+ORDER BY n DESC;
+```
 
 ## Finding types
 
@@ -49,15 +128,48 @@ correlation  table:orders, column:orders.total, column:orders.item_count
   "orders.total correlates strongly with orders.item_count (Pearson r = 0.87)."
 
 cardinality  table:customers, table:orders
-  "Each customer has 0-47 orders, mean 3.2, median 2. 18% of customers have no
-   orders."
+  "Orders per customer, over all 2,000 customers: 0 orders 18.0%, 1 order
+   31.6%, 2 orders 24.1%, 3 orders 13.2%, 4-6 orders 9.8%, 7+ orders 3.3%.
+   Mean 2.1, median 2, max 47."
+
+correlation  table:orders, column:orders.total, column:orders.channel
+  "Mean order total is flat across channels - web $84.10, ios $86.40,
+   android $82.90, phone $85.20 - so channel and total can be drawn
+   independently."
+
+constraints  table:customers, table:orders, column:orders.created_at,
+             column:customers.created_at
+  "Every one of the 4,214 orders was created at or after its customer's
+   created_at; 0 violations. Median gap 31 days, p90 402 days."
+
+constraints  table:cards, column:cards.brand, column:cards.number_last4
+  "Card number length and leading digit are determined by brand: visa always
+   16 digits starting 4 (1,204 of 1,204), amex always 15 starting 34 or 37
+   (188 of 188), mastercard always 16 starting 51-55 (903 of 903)."
 
 anomaly      table:orders, column:orders.total
   "0.4% of orders have total = 0.00, clustered in 2023-Q1 - likely comp or test
    orders."
+
+anomaly      table:payments, column:payments.updated_at
+  "1,551 of 2,000 payments share the single updated_at value
+   2026-03-14T02:11:07Z - a bulk backfill, not organic edit activity.
+   Realistic generated data should spread updated_at across the window."
 ```
 
 Statistics are the payload. "The email column contains email addresses" is worthless; "emails are 100% unique and non-null, mean length 24, 61% on the top 10 consumer domains" is a spec Fabricate can generate against.
+
+## Artifacts versus realism
+
+Source databases carry properties that are true of the data yet wrong to reproduce, and this is especially common when the source was itself seeded or generated. Watch for:
+
+- Every parent having at least one child, or no dormant, cancelled or empty records anywhere.
+- Perfect uniqueness in a column where real populations repeat heavily — postcodes, city names, employers, device models.
+- A distribution that stops dead at a round number, which usually means a cap or a default rather than a real ceiling.
+- Many rows sharing one timestamp, which is a migration or backfill rather than user activity.
+- Categorical columns drawn independently where reality couples them — a status unrelated to the dates around it, a country unrelated to currency.
+
+Record each as an `anomaly` that names the artifact and says what real data would look like instead. The distinction matters because Fabricate treats a `constraints` finding as a rule to satisfy: written up that way, "100% of customers have placed an order" stops being an observation and becomes a requirement that guarantees the generated data inherits the flaw.
 
 ## Export format
 
