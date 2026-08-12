@@ -106,3 +106,27 @@ npx skills update
 
 Open an issue in this repository for installation or skill-content problems.
 For product support, visit [Tonic AI](https://www.tonic.ai/).
+
+<!-- fabricate-plugin:start -->
+### Fabricate
+
+Profile a production database locally, then import its PII-free statistical model
+into Fabricate without giving Fabricate access to production.
+
+Install only the portable skill:
+
+```bash
+npx skills add TonicAI/agents --skill fabricate-database-profile
+```
+
+Or install the skill and Fabricate MCP server together in Claude Code:
+
+```text
+/plugin marketplace add TonicAI/agents
+/plugin install fabricate@tonic-ai
+```
+
+Cursor teams can import `TonicAI/agents` as a marketplace and install the
+**Fabricate** plugin. See [`plugins/fabricate/README.md`](plugins/fabricate/README.md)
+for usage and manual MCP configuration.
+<!-- fabricate-plugin:end -->

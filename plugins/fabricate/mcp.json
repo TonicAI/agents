@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fabricate": {
+      "type": "http",
+      "url": "https://fabricate.tonic.ai/api/v1/mcp"
+    }
+  }
+}

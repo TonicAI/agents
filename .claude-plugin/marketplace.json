@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "tonic-ai",
+  "owner": {
+    "name": "Tonic AI",
+    "url": "https://fabricate.tonic.ai"
+  },
+  "plugins": [
+    {
+      "name": "fabricate",
+      "source": "./plugins/fabricate",
+      "version": "4.22.0",
+      "description": "Profile a production database locally and generate matching synthetic data with Fabricate. Ships the database-profiling skill plus the Fabricate MCP server.",
+      "category": "development"
+    }
+  ]
+}

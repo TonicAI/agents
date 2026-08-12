@@ -1,0 +1,18 @@
+{
+  "name": "tonic-ai",
+  "owner": {
+    "name": "Tonic AI",
+    "email": "support@tonic.ai"
+  },
+  "metadata": {
+    "description": "Plugins for Tonic AI products"
+  },
+  "plugins": [
+    {
+      "name": "fabricate",
+      "source": "./plugins/fabricate",
+      "version": "4.22.0",
+      "description": "Profile a production database locally and generate matching synthetic data with Fabricate. Ships the database-profiling skill plus the Fabricate MCP server."
+    }
+  ]
+}
