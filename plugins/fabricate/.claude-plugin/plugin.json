@@ -1,6 +1,6 @@
 {
   "name": "fabricate",
-  "version": "4.23.0",
+  "version": "4.24.0",
   "description": "Profile a production database locally and generate matching synthetic data with Fabricate. Ships the database-profiling skill plus the Fabricate MCP server.",
   "author": {
     "name": "Tonic AI",
