@@ -2,7 +2,7 @@
 name: fabricate-database-profile
 description: Profiles a production or staging database locally and produces a Fabricate profile export (.fabricate-profile.json) containing only schema and aggregate statistics, then optionally imports it into a Fabricate project over MCP. Use when the user asks to profile a database for Fabricate, build a statistical model of production data for synthetic data generation, or create/import a Fabricate profile without connecting Fabricate to production.
 metadata:
-  version: 4.24.0
+  version: 4.25.0
 ---
 
 # Fabricate database profiling
