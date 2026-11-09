@@ -108,7 +108,7 @@ format and per-platform notes.
 
 ## Docs
 
-- [Fabricate MCP server](https://github.com/TonicAI/fabricate/blob/main/docs/mcp.md)
+- [Fabricate MCP server](https://docs.tonic.ai/fabricate/fabricate-api/using-the-fabricate-mcp-server)
 - [Fabricate](https://fabricate.tonic.ai)
 
 ---
