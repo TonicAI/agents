@@ -95,6 +95,16 @@ GROUP BY brand, LENGTH(number), SUBSTR(number, 1, 1)
 ORDER BY n DESC;
 ```
 
+**JSON key-shape distribution** (PostgreSQL shape; Snowflake `OBJECT_KEYS`, MySQL `JSON_KEYS`). Returns key names and row counts only — never values. Used by the [json-schema sub-skill](json-schema.md).
+
+```sql
+SELECT k.key, COUNT(*) AS n
+FROM t, LATERAL jsonb_object_keys(t.col) AS k(key)
+WHERE t.col IS NOT NULL
+GROUP BY k.key
+ORDER BY n DESC;
+```
+
 ## Finding types
 
 | Type | Records |
@@ -107,6 +117,7 @@ ORDER BY n DESC;
 | `cardinality` | Parent-child fan-out ratios and orphan/childless shares. Critical for realistic child-row volumes. |
 | `anomaly` | Outliers and data-quality quirks worth reproducing or avoiding. |
 | `reference_rows` | The one type that carries real values. See [Reference rows](#reference-rows). |
+| `json_schema` | The extracted structural schema of a JSON column (keys and value types, never values) in its `data` payload. See [json-schema.md](json-schema.md). |
 
 ## Tags
 
@@ -165,6 +176,13 @@ anomaly      table:orders, column:orders.total
   "0.4% of orders have total = 0.00, clustered in 2023-Q1 - likely comp or test
    orders."
 
+json_schema  table:events, column:events.payload
+  "events.payload is a JSONB column; 98.6% of 5,000 sampled values conform
+   to one schema with keys event (string), ts (ISO-8601 timestamp string),
+   user_id (number), props (object, 0-8 keys, mean 3.2); 1.4% parse
+   failures. Depth <= 3. The extracted schema rides in the finding's data
+   payload - see json-schema.md."
+
 anomaly      table:payments, column:payments.updated_at
   "1,551 of 2,000 payments share the single updated_at value
    2026-03-14T02:11:07Z - a bulk backfill, not organic edit activity.
@@ -210,7 +228,7 @@ Contract:
 - `exported_at` is ISO 8601 UTC.
 - `profile` is the profile name. It must not start with `db:` — that prefix is reserved for profiles that belong to a Fabricate database.
 - Each finding needs `content` (non-empty string), `finding_type` (from the table above), and `tags` (an array using the controlled namespaces above).
-- `data` is only permitted on `reference_rows` findings and must be omitted everywhere else.
+- `data` is only permitted on `reference_rows` and `json_schema` findings and must be omitted everywhere else. A `json_schema` payload needs a non-empty `table` string, a non-empty `column` string, and a non-empty `json_schema` object that uses at least one structural keyword and none of `enum`, `const`, `default` or `examples`, and is a valid JSON Schema document with only internal `$ref`s (optional `schema` string and `stats` object of finite numbers), capped at 64 KB.
 - All numbers must be finite. Write out `NaN`/`Infinity` as prose or omit the statistic.
 
 Write the file atomically (temp file, then rename) so a partial write is never mistaken for a profile.

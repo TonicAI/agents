@@ -2,7 +2,7 @@
 name: fabricate-database-profile
 description: Profiles a production or staging database locally and produces a Fabricate profile export (.fabricate-profile.json) containing only schema and aggregate statistics, then optionally imports it into a Fabricate project over MCP. Use when the user asks to profile a database for Fabricate, build a statistical model of production data for synthetic data generation, or create/import a Fabricate profile without connecting Fabricate to production.
 metadata:
-  version: 4.40.1
+  version: 4.41.0
 ---
 
 # Fabricate database profiling
@@ -86,6 +86,8 @@ Only return category labels when the grouping columns are already known to be lo
 
 Sample rather than scanning whole tables: draw a bounded random sample (Fabricate's own profiler defaults to 5,000 rows) per table and note the sample size in the findings. Prefer platform-native sampling (`TABLESAMPLE`, `SAMPLE`, `ORDER BY RANDOM()`) over full scans on large tables.
 
+**JSON and semi-structured columns.** When the inventory finds JSON-like columns (`jsonb`, `JSON`, `VARIANT`, …), switch to the [json-schema sub-skill](json-schema.md): detect whether the column holds a consistent schema, extract the keys and value types — never the values — and persist the result as `json_schema` findings.
+
 If you must compute a statistic outside the database, keep raw rows inside your program, write only aggregates to a temporary file, never print raw rows to stdout or read them into context, and delete any temporary program and data file once the profile is written.
 
 ### Step 4: Write findings
@@ -95,10 +97,10 @@ A profile is a list of **findings**: self-contained, plain-English statements ab
 Every finding needs:
 
 - `content` — a complete sentence that makes sense on its own, including the concrete numbers.
-- `finding_type` — one of `ddl`, `description`, `distribution`, `correlation`, `constraints`, `cardinality`, `anomaly`, or `reference_rows`.
+- `finding_type` — one of `ddl`, `description`, `distribution`, `correlation`, `constraints`, `cardinality`, `anomaly`, `reference_rows`, or `json_schema`.
 - `tags` — use only `table:<table_name>` and `column:<table_name>.<column_name>`. These are the controlled namespaces Fabricate's agents understand; do not invent others.
 
-`reference_rows` is the only type that carries real values, and the only type that may carry a `data` payload. It requires explicit user approval and a small, non-sensitive lookup table — see the `reference_rows` section in [reference.md](reference.md). Every other type describes the data and must omit `data` entirely.
+`reference_rows` and `json_schema` are the only types that carry a `data` payload. `reference_rows` requires explicit user approval — see the `reference_rows` section in [reference.md](reference.md). `json_schema` carries the extracted structure of a JSON column (keys and value types only, no source values) and needs no approval — see the [json-schema sub-skill](json-schema.md). Every other type describes the data in plain English and must omit `data` entirely.
 
 **Separate what the data does from what it should do.** A source database — especially one already seeded or generated — carries artifacts nobody wants reproduced: every parent having at least one child, a column perfectly unique where real data would repeat heavily, a hard cap truncating a distribution, statuses drawn independently of the dates around them. Record these as `anomaly` findings that name the artifact and say what real data would look like instead. Writing one up as a `constraints` finding instead turns a flaw in the source into a requirement, and Fabricate will faithfully reproduce it.
 
@@ -109,10 +111,11 @@ First check coverage, while a thin profile is still cheap to fill in:
 - Every table has a `ddl` finding and a `description` finding carrying its row count.
 - Every foreign key has a `cardinality` finding carrying a fan-out distribution, not just a mean.
 - Every column appears in at least one finding beyond its table's `ddl`.
+- Every consistent JSON column has a `json_schema` finding; every inconsistent one has a finding saying why not.
 - Every rule phrased as an absolute carries the row counts behind it.
 - The arithmetic reconciles. Bucket counts sum to the population they describe, shares sum to 100%, and any total you state matches the per-table counts you recorded. Add the numbers up rather than trusting a figure you carried over from an earlier step.
 
-Then write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and `data` appears only on `reference_rows` findings the user approved in Step 4.
+Then write `<profile-name>.fabricate-profile.json` in the format documented in [reference.md](reference.md). Before handing it over, verify: the export marker is present, every `finding_type` is valid, every tag uses an accepted namespace, the profile name does not start with `db:`, all numbers are finite, and `data` appears only on `reference_rows` findings the user approved in Step 4 and on `json_schema` findings produced by the [json-schema sub-skill](json-schema.md).
 
 No real values from the source data may appear anywhere else. Do not silently drop a finding to satisfy this check — an approved `reference_rows` snapshot belongs in the export, and anything else that fails validation is a bug to fix and report, not to delete.
 
