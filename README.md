@@ -15,7 +15,7 @@ Install skills with the open-source
 [`skills`](https://github.com/vercel-labs/skills) CLI:
 
 ```bash
-npx skills add TonicAI/skills
+npx skills add TonicAI/agents
 ```
 
 The installer discovers the coding agents on your machine and lets you choose
@@ -25,23 +25,23 @@ Useful variations:
 
 ```bash
 # See the available skills without installing anything
-npx skills add TonicAI/skills --list
+npx skills add TonicAI/agents --list
 
 # Install one skill
-npx skills add TonicAI/skills --skill fabricate-database-profile
+npx skills add TonicAI/agents --skill fabricate-database-profile
 
 # Install globally, so the skill is available in every project
-npx skills add TonicAI/skills --skill fabricate-database-profile --global
+npx skills add TonicAI/agents --skill fabricate-database-profile --global
 
 # Install for a specific agent without interactive prompts
-npx skills add TonicAI/skills \
+npx skills add TonicAI/agents \
   --skill fabricate-database-profile \
   --agent claude-code \
   --global \
   --yes
 ```
 
-Run `npx skills add TonicAI/skills --help` for all supported agents and options.
+Run `npx skills add TonicAI/agents --help` for all supported agents and options.
 
 ## Available skills
 
@@ -59,7 +59,7 @@ metadata.
 Install it directly:
 
 ```bash
-npx skills add TonicAI/skills --skill fabricate-database-profile
+npx skills add TonicAI/agents --skill fabricate-database-profile
 ```
 
 To import the resulting profile automatically, connect your agent to the
