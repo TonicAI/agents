@@ -118,6 +118,7 @@ ORDER BY n DESC;
 | `anomaly` | Outliers and data-quality quirks worth reproducing or avoiding. |
 | `reference_rows` | The one type that carries real values. See [Reference rows](#reference-rows). |
 | `json_schema` | The extracted structural schema of a JSON column (keys and value types, never values) in its `data` payload. See [json-schema.md](json-schema.md). |
+| `anonymization` | Never produced by this skill. Fabricate stores masking settings on a database's Masking Config, not as findings, so a profile contains none. |
 
 ## Tags
 

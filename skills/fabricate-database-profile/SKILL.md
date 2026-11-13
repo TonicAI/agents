@@ -2,7 +2,7 @@
 name: fabricate-database-profile
 description: Profiles a production or staging database locally and produces a Fabricate profile export (.fabricate-profile.json) containing only schema and aggregate statistics, then optionally imports it into a Fabricate project over MCP. Use when the user asks to profile a database for Fabricate, build a statistical model of production data for synthetic data generation, or create/import a Fabricate profile without connecting Fabricate to production.
 metadata:
-  version: 4.41.3
+  version: 5.0.0
 ---
 
 # Fabricate database profiling
@@ -100,7 +100,9 @@ Every finding needs:
 - `finding_type` — one of `ddl`, `description`, `distribution`, `correlation`, `constraints`, `cardinality`, `anomaly`, `reference_rows`, or `json_schema`.
 - `tags` — use only `table:<table_name>` and `column:<table_name>.<column_name>`. These are the controlled namespaces Fabricate's agents understand; do not invent others.
 
-`reference_rows` and `json_schema` are the only types that carry a `data` payload. `reference_rows` requires explicit user approval — see the `reference_rows` section in [reference.md](reference.md). `json_schema` carries the extracted structure of a JSON column (keys and value types only, no source values) and needs no approval — see the [json-schema sub-skill](json-schema.md). Every other type describes the data in plain English and must omit `data` entirely.
+`reference_rows` and `json_schema` are the only types that carry a `data` payload. `reference_rows` is the only type that carries real values; it requires explicit user approval and a small, non-sensitive lookup table — see the `reference_rows` section in [reference.md](reference.md). `json_schema` carries the extracted structure of a JSON column (keys and value types only, no source values) and needs no approval — see the [json-schema sub-skill](json-schema.md). Every other type describes the data and must omit `data` entirely.
+
+Masking settings are never part of a profile export: Fabricate stores them on a database's Masking Config inside the product, not as findings, so a profile you produce or edit contains no masking knowledge and must not invent any.
 
 **Separate what the data does from what it should do.** A source database — especially one already seeded or generated — carries artifacts nobody wants reproduced: every parent having at least one child, a column perfectly unique where real data would repeat heavily, a hard cap truncating a distribution, statuses drawn independently of the dates around them. Record these as `anomaly` findings that name the artifact and say what real data would look like instead. Writing one up as a `constraints` finding instead turns a flaw in the source into a requirement, and Fabricate will faithfully reproduce it.
 
